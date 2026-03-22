@@ -1,0 +1,137 @@
+# This file is part of CycloneDX Python
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) OWASP Foundation. All Rights Reserved.
+
+name: Rust Wheels
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Publish to PyPI (requires trusted publishing setup)"
+        type: boolean
+        default: false
+        required: false
+  push:
+    tags: [ 'v*' ]
+
+concurrency:
+  group: '${{ github.workflow }}-${{ github.ref }}'
+  cancel-in-progress: true
+
+env:
+  RUST_CRATE_DIR: rust/cyclonedx_bom_rust
+  PYTHON_VERSION_DEFAULT: "3.14"
+
+permissions: {}
+
+jobs:
+  build:
+    name: Build wheels (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: manylinux-x86_64
+            os: ubuntu-latest
+            target: x86_64
+            manylinux: 2_28
+          - platform: manylinux-aarch64
+            os: ubuntu-latest
+            target: aarch64
+            manylinux: 2_28
+          - platform: musllinux-x86_64
+            os: ubuntu-latest
+            target: x86_64
+            manylinux: musllinux_1_2
+          - platform: musllinux-aarch64
+            os: ubuntu-latest
+            target: aarch64
+            manylinux: musllinux_1_2
+          - platform: windows-x64
+            os: windows-latest
+            target: x64
+            python-arch: x64
+            manylinux: off
+          - platform: macos-x86_64
+            os: macos-13
+            target: x86_64
+            manylinux: off
+          - platform: macos-aarch64
+            os: macos-14
+            target: aarch64
+            manylinux: off
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Setup Python
+        if: ${{ !startsWith(matrix.platform, 'windows-') }}
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION_DEFAULT }}
+      - name: Setup Python (Windows)
+        if: startsWith(matrix.platform, 'windows-')
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION_DEFAULT }}
+          architecture: ${{ matrix.python-arch }}
+      - name: Setup QEMU
+        if: matrix.os == 'ubuntu-latest' && matrix.target == 'aarch64'
+        uses: docker/setup-qemu-action@v3
+      - name: Build wheels
+        uses: PyO3/maturin-action@v1
+        with:
+          command: build
+          working-directory: ${{ env.RUST_CRATE_DIR }}
+          target: ${{ matrix.target }}
+          manylinux: ${{ matrix.manylinux }}
+          args: >-
+            --release
+            --locked
+            --compatibility pypi
+            --out dist
+            ${{ matrix.args-extra }}
+      - name: Upload wheels
+        uses: actions/upload-artifact@v6
+        with:
+          name: wheels-${{ matrix.platform }}
+          path: ${{ env.RUST_CRATE_DIR }}/dist/*
+          if-no-files-found: error
+
+  publish:
+    name: Publish to PyPI
+    runs-on: ubuntu-latest
+    needs: build
+    if: |
+      !failure() && !cancelled() && (
+        startsWith(github.ref, 'refs/tags/v') ||
+        github.event.inputs.publish == 'true'
+      )
+    permissions:
+      # NOTE: this enables trusted publishing.
+      id-token: write
+    steps:
+      - name: Download wheels
+        uses: actions/download-artifact@v7
+        with:
+          path: dist
+          pattern: wheels-*
+          merge-multiple: true
+      - name: Publish
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist

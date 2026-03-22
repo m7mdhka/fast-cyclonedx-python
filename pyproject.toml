@@ -76,6 +76,7 @@ pip-requirements-parser = "^32.0"
 packaging = "^22 || ^23 || ^24 || ^25 || ^26"
 tomli = { version = "^2.0.1", python = "<3.11" }
 chardet = "^5.1"
+cyclonedx-bom-rust = { version = "^7.2.2", optional = true, markers = "implementation_name == 'cpython' and ((platform_system == 'Linux' and (platform_machine == 'x86_64' or platform_machine == 'aarch64')) or (platform_system == 'Darwin' and (platform_machine == 'x86_64' or platform_machine == 'arm64')) or (platform_system == 'Windows' and (platform_machine == 'AMD64' or platform_machine == 'x86_64')))" }
 
 [tool.poetry.group.dev.dependencies]
 # pin to exact versions, if the tool/lib/plugin is process-relevant
@@ -116,6 +117,9 @@ poetry = "^1.7"
 pdm = "^2.11"
 uv = "0.10.10"  # keep pinned to exact version, until a v1.0.0 is released
 
+[tool.poetry.extras]
+speedups = ["cyclonedx-bom-rust"]
+
 
 
 [tool.semantic_release]
@@ -130,7 +134,11 @@ build_command = """
   pip install poetry
   poetry build
 """
-version_toml = ["pyproject.toml:tool.poetry.version"]
+version_toml = [
+  "pyproject.toml:tool.poetry.version",
+  "rust/cyclonedx_bom_rust/Cargo.toml:package.version",
+  "rust/cyclonedx_bom_rust/pyproject.toml:project.version",
+]
 version_variables = [
   "cyclonedx_py/__init__.py:__version__",
   "docs/conf.py:release",

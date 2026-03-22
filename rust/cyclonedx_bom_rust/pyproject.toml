@@ -1,0 +1,20 @@
+[build-system]
+requires = ["maturin>=1.9,<2"]
+build-backend = "maturin"
+
+[project]
+name = "cyclonedx-bom-rust"
+version = "7.2.2"
+description = "Rust-accelerated validation helpers for cyclonedx-bom"
+requires-python = ">=3.9"
+license = { text = "Apache-2.0" }
+readme = "README.md"
+classifiers = [
+  "Programming Language :: Python",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Rust",
+]
+
+[tool.maturin]
+module-name = "cyclonedx_bom_rust"
+bindings = "pyo3"

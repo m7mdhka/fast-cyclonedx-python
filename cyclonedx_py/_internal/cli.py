@@ -25,7 +25,6 @@ from typing import TYPE_CHECKING, Any, NoReturn, Optional, TextIO, Union
 from cyclonedx.model import Property
 from cyclonedx.output import make_outputter
 from cyclonedx.schema import OutputFormat, SchemaVersion
-from cyclonedx.validation import make_schemabased_validator
 
 from .. import __version__
 from . import PropertyName, PropertyValue
@@ -33,6 +32,7 @@ from .environment import EnvironmentBB
 from .pipenv import PipenvBB
 from .poetry import PoetryBB
 from .requirements import RequirementsBB
+from .rust_validation import validate_bom_json as rust_validate_bom_json
 from .utils.args import argparse_type4enum, choices4enum
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -42,6 +42,15 @@ if TYPE_CHECKING:  # pragma: no cover
     from . import BomBuilder
 
 OPTION_OUTPUT_STDOUT = '-'
+
+
+def _python_validate_str(output: str, *, output_format: OutputFormat, spec_version: SchemaVersion) -> Any:
+    from cyclonedx.validation import make_schemabased_validator
+
+    return make_schemabased_validator(
+        output_format,
+        spec_version
+    ).validate_str(output)
 
 
 class Command:
@@ -190,12 +199,29 @@ class Command:
         self._logger.info('Validating result to spec: %s/%s',
                           self._spec_version.to_version(), self._output_format.name)
 
-        validation_error = make_schemabased_validator(
-            self._output_format,
-            self._spec_version
-        ).validate_str(output)
+        validation_error = None
+        if self._output_format is OutputFormat.JSON:
+            try:
+                rust_error = rust_validate_bom_json(output, spec_version=self._spec_version)
+            except ImportError:
+                rust_error = None
+            except Exception as error:
+                self._logger.debug('Rust validation failed, falling back to Python: %s', error, exc_info=error)
+                rust_error = None
+            else:
+                if rust_error is not None:
+                    validation_error = ValueError(rust_error)
+                else:
+                    self._logger.debug('result is schema-valid')
+                    return True
+        if validation_error is None:
+            validation_error = _python_validate_str(
+                output,
+                output_format=self._output_format,
+                spec_version=self._spec_version,
+            )
         if validation_error:
-            self._logger.debug('Validation Errors: %r', validation_error.data)
+            self._logger.debug('Validation Errors: %r', getattr(validation_error, 'data', validation_error))
             self._logger.error('The result is invalid to schema '
                                f'{self._spec_version.to_version()}/{self._output_format.name}')
             self._logger.warning('Please report the issue and provide all input data to: '

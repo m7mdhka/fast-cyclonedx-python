@@ -62,6 +62,16 @@ uv tool install cyclonedx-bom         # install via uv
 # ... you get the hang
 ```
 
+### Optional speedups (recommended)
+
+For much faster JSON schema validation, install the optional Rust backend (no Rust toolchain needed when wheels are available):
+
+```shell
+python -m pip install 'cyclonedx-bom[speedups]'
+```
+
+`cyclonedx-py` will automatically use it for JSON output when installed, and fall back to the Python validator otherwise.
+
 ## Usage
 
 Call via one of commands:

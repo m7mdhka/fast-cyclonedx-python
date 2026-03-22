@@ -22,7 +22,7 @@ from os.path import join
 from random import random
 from typing import Any
 from unittest import TestCase
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from cyclonedx.model.bom import Bom
 from cyclonedx.model.component import Component, ComponentType
@@ -138,6 +138,45 @@ class TestCli(TestCase, SnapshotMixin):
 
         self.assertEqual(r'["invalid to CDX schema"]', out)
         self.assertIn('WARNING: Validation skipped', log)
+
+    def test_validation_uses_rust_backend_when_available_and_valid(self) -> None:
+        class MyBBC(BomBuilder):
+            def __new__(cls, *args: Any, **kwargs: Any) -> BomBuilder:
+                return Mock(spec=BomBuilder, return_value=Mock(spec=Bom))
+
+        with patch('cyclonedx_py._internal.cli.rust_validate_bom_json', return_value=None), \
+                patch('cyclonedx_py._internal.cli._python_validate_str') as py_validator:
+            py_validator.side_effect = AssertionError('python validator must not be used')
+            command = Command(
+                logger=self.__make_fresh_logger(StringIO()),
+                short_purls=False,
+                spec_version=SchemaVersion.V1_4,
+                output_format=OutputFormat.JSON,
+                output_reproducible=False,
+                should_validate=True,
+                _bbc=MyBBC
+            )
+            self.assertTrue(command._validate('{}'))
+
+    def test_validation_uses_rust_backend_when_available_and_invalid(self) -> None:
+        class MyBBC(BomBuilder):
+            def __new__(cls, *args: Any, **kwargs: Any) -> BomBuilder:
+                return Mock(spec=BomBuilder, return_value=Mock(spec=Bom))
+
+        with patch('cyclonedx_py._internal.cli.rust_validate_bom_json', return_value='invalid'), \
+                patch('cyclonedx_py._internal.cli._python_validate_str') as py_validator:
+            py_validator.side_effect = AssertionError('python validator must not be used')
+            command = Command(
+                logger=self.__make_fresh_logger(StringIO()),
+                short_purls=False,
+                spec_version=SchemaVersion.V1_4,
+                output_format=OutputFormat.JSON,
+                output_reproducible=False,
+                should_validate=True,
+                _bbc=MyBBC
+            )
+            with self.assertRaisesRegex(ValueError, 'schema-invalid'):
+                command._validate('{}')
 
     def assertEqualSnapshot(self, actual: str, snapshot_name: str) -> None:  # noqa: N802
         super().assertEqualSnapshot(actual, join('cli', snapshot_name))
